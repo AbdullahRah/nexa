@@ -3,21 +3,18 @@ import { normalizeContractsFinderOcds } from "./normalize";
 
 const BASE_URL = "https://www.contractsfinder.service.gov.uk/Published/Notices/OCDS/Search";
 
-// Construction CPV codes to filter on
-const CONSTRUCTION_CPV_CODES = [
-  "45000000",
-  "45100000",
-  "45200000",
-  "45210000",
-  "45300000",
-  "45400000",
-  "50000000",
-  "71000000",
-  "71200000",
-  "71300000",
-  "71500000",
-  "72224000",
+// Construction CPV prefixes — match any notice whose CPV starts with these
+const CONSTRUCTION_CPV_PREFIXES = [
+  "45", // Construction work
+  "50", // Repair and maintenance
+  "71", // Architecture, construction, engineering
+  "72224", // PM consultancy
 ];
+
+function isConstructionCpv(cpv: string | null): boolean {
+  if (!cpv) return false;
+  return CONSTRUCTION_CPV_PREFIXES.some((prefix) => cpv.startsWith(prefix));
+}
 
 async function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -47,18 +44,8 @@ async function fetchWithBackoff(url: string, attempt = 0): Promise<Response> {
 }
 
 async function fetchPage(
-  cpv: string,
-  page: number,
-  publishedFrom: string
-): Promise<{ releases: unknown[]; total: number }> {
-  const params = new URLSearchParams({
-    cpvCodes: cpv,
-    publishedFrom,
-    page: String(page),
-    limit: "100",
-  });
-
-  const url = `${BASE_URL}?${params}`;
+  url: string
+): Promise<{ releases: unknown[]; nextUrl: string | null }> {
   const res = await fetchWithBackoff(url);
 
   if (!res.ok) {
@@ -67,8 +54,8 @@ async function fetchPage(
 
   const data = await res.json();
   return {
-    releases: data?.releases ?? data?.data ?? [],
-    total: data?.totalNotices ?? data?.total ?? 0,
+    releases: data?.releases ?? [],
+    nextUrl: data?.links?.next ?? null,
   };
 }
 
@@ -76,12 +63,14 @@ export async function runContractsFinderSync(): Promise<{
   fetched: number;
   newCount: number;
   updatedCount: number;
+  skipped: number;
   error?: string;
 }> {
   const startedAt = new Date();
   let totalFetched = 0;
   let totalNew = 0;
   let totalUpdated = 0;
+  let totalSkipped = 0;
   let syncError: string | undefined;
 
   const syncLogId = (
@@ -104,131 +93,123 @@ export async function runContractsFinderSync(): Promise<{
       ? lastSynced.toISOString().split("T")[0]
       : new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split("T")[0];
 
-    for (const cpv of CONSTRUCTION_CPV_CODES) {
-      let page = 1;
-      let hasMore = true;
+    let nextUrl: string | null = `${BASE_URL}?publishedFrom=${publishedFrom}`;
+    let pageNum = 1;
 
-      while (hasMore) {
-        // Throttle: 1 req/sec
-        await sleep(1000);
+    while (nextUrl) {
+      await sleep(1000); // Throttle: 1 req/sec
 
-        let releases: unknown[];
-        let total: number;
+      let releases: unknown[];
 
-        try {
-          ({ releases, total } = await fetchPage(cpv, page, publishedFrom));
-        } catch (err) {
-          syncError = String(err);
-          break;
-        }
-
-        totalFetched += releases.length;
-
-        for (const release of releases) {
-          try {
-            const normalized = normalizeContractsFinderOcds(release);
-            if (!normalized.ocid) continue;
-
-            const existing = await prisma.opportunity.findUnique({
-              where: { ocid: normalized.ocid },
-              select: { id: true },
-            });
-
-            if (existing) {
-              await prisma.opportunity.update({
-                where: { ocid: normalized.ocid },
-                data: {
-                  title: normalized.title,
-                  description_raw: normalized.description_raw,
-                  buyer_name: normalized.buyer_name,
-                  buyer_identifier: normalized.buyer_identifier,
-                  buyer_type: normalized.buyer_type,
-                  updated_at: normalized.updated_at,
-                  tender_deadline: normalized.tender_deadline,
-                  value_min: normalized.value_min,
-                  value_max: normalized.value_max,
-                  status: normalized.status,
-                  documents: normalized.documents ?? undefined,
-                  raw_payload: normalized.raw_payload,
-                },
-              });
-              totalUpdated++;
-            } else {
-              await prisma.opportunity.create({
-                data: {
-                  source_system: normalized.source_system,
-                  source_notice_id: normalized.source_notice_id,
-                  ocid: normalized.ocid,
-                  notice_type: normalized.notice_type,
-                  title: normalized.title,
-                  description_raw: normalized.description_raw,
-                  buyer_name: normalized.buyer_name,
-                  buyer_identifier: normalized.buyer_identifier,
-                  buyer_type: normalized.buyer_type,
-                  published_at: normalized.published_at,
-                  updated_at: normalized.updated_at,
-                  tender_deadline: normalized.tender_deadline,
-                  contract_start: normalized.contract_start,
-                  contract_end: normalized.contract_end,
-                  value_min: normalized.value_min,
-                  value_max: normalized.value_max,
-                  currency: normalized.currency,
-                  framework_flag: normalized.framework_flag,
-                  lots_flag: normalized.lots_flag,
-                  lot_count: normalized.lot_count,
-                  location_text: normalized.location_text,
-                  region_code: normalized.region_code,
-                  postcode: normalized.postcode,
-                  cpv_primary: normalized.cpv_primary,
-                  cpv_additional: normalized.cpv_additional,
-                  keywords: normalized.keywords,
-                  documents: normalized.documents ?? undefined,
-                  status: normalized.status,
-                  source_url: normalized.source_url,
-                  raw_payload: normalized.raw_payload,
-                },
-              });
-              totalNew++;
-            }
-          } catch (err) {
-            // Log malformed notice and continue
-            console.error("Failed to process notice:", err);
-          }
-        }
-
-        hasMore = releases.length === 100 && totalFetched < total;
-        page++;
+      try {
+        ({ releases, nextUrl } = await fetchPage(nextUrl));
+      } catch (err) {
+        syncError = String(err);
+        break;
       }
+
+      if (releases.length === 0) break;
+
+      totalFetched += releases.length;
+      console.log(`Page ${pageNum}: ${releases.length} notices (${totalFetched} total)`);
+
+      for (const release of releases) {
+        try {
+          const normalized = normalizeContractsFinderOcds(release);
+          if (!normalized.ocid) continue;
+
+          // Filter for construction-related CPV codes
+          if (!isConstructionCpv(normalized.cpv_primary)) {
+            totalSkipped++;
+            continue;
+          }
+
+          const existing = await prisma.opportunity.findUnique({
+            where: { ocid: normalized.ocid },
+            select: { id: true },
+          });
+
+          if (existing) {
+            await prisma.opportunity.update({
+              where: { ocid: normalized.ocid },
+              data: {
+                title: normalized.title,
+                description_raw: normalized.description_raw,
+                buyer_name: normalized.buyer_name,
+                buyer_identifier: normalized.buyer_identifier,
+                buyer_type: normalized.buyer_type,
+                updated_at: normalized.updated_at,
+                tender_deadline: normalized.tender_deadline,
+                value_min: normalized.value_min,
+                value_max: normalized.value_max,
+                status: normalized.status,
+                documents: normalized.documents ?? undefined,
+                raw_payload: normalized.raw_payload,
+              },
+            });
+            totalUpdated++;
+          } else {
+            await prisma.opportunity.create({
+              data: {
+                source_system: normalized.source_system,
+                source_notice_id: normalized.source_notice_id,
+                ocid: normalized.ocid,
+                notice_type: normalized.notice_type,
+                title: normalized.title,
+                description_raw: normalized.description_raw,
+                buyer_name: normalized.buyer_name,
+                buyer_identifier: normalized.buyer_identifier,
+                buyer_type: normalized.buyer_type,
+                published_at: normalized.published_at,
+                updated_at: normalized.updated_at,
+                tender_deadline: normalized.tender_deadline,
+                contract_start: normalized.contract_start,
+                contract_end: normalized.contract_end,
+                value_min: normalized.value_min,
+                value_max: normalized.value_max,
+                currency: normalized.currency,
+                framework_flag: normalized.framework_flag,
+                lots_flag: normalized.lots_flag,
+                lot_count: normalized.lot_count,
+                location_text: normalized.location_text,
+                region_code: normalized.region_code,
+                postcode: normalized.postcode,
+                cpv_primary: normalized.cpv_primary,
+                cpv_additional: normalized.cpv_additional,
+                keywords: normalized.keywords,
+                documents: normalized.documents ?? undefined,
+                status: normalized.status,
+                source_url: normalized.source_url,
+                raw_payload: normalized.raw_payload,
+              },
+            });
+            totalNew++;
+          }
+        } catch (err) {
+          console.error("Failed to process notice:", err);
+        }
+      }
+
+      pageNum++;
     }
 
     // Update last_synced on source
-    await prisma.source.upsert({
-      where: { id: source?.id ?? "" },
-      update: { last_synced: new Date() },
-      create: {
-        name: "contracts_finder",
-        base_url: BASE_URL,
-        auth_type: "none",
-        last_synced: new Date(),
-        is_active: true,
-      },
-    }).catch(async () => {
-      // If upsert by id fails (no id), upsert by name
-      const existing = await prisma.source.findFirst({ where: { name: "contracts_finder" } });
-      if (existing) {
-        await prisma.source.update({ where: { id: existing.id }, data: { last_synced: new Date() } });
-      } else {
-        await prisma.source.create({
-          data: {
-            name: "contracts_finder",
-            base_url: BASE_URL,
-            auth_type: "none",
-            last_synced: new Date(),
-            is_active: true,
-          },
-        });
-      }
-    });
+    if (source) {
+      await prisma.source.update({
+        where: { id: source.id },
+        data: { last_synced: new Date() },
+      });
+    } else {
+      await prisma.source.create({
+        data: {
+          name: "contracts_finder",
+          base_url: BASE_URL,
+          auth_type: "none",
+          last_synced: new Date(),
+          is_active: true,
+        },
+      });
+    }
   } catch (err) {
     syncError = String(err);
   }
@@ -248,6 +229,7 @@ export async function runContractsFinderSync(): Promise<{
     fetched: totalFetched,
     newCount: totalNew,
     updatedCount: totalUpdated,
+    skipped: totalSkipped,
     error: syncError,
   };
 }
