@@ -2,7 +2,9 @@ import { Suspense } from "react";
 import Link from "next/link";
 import WaitlistForm from "@/components/WaitlistForm";
 import LivePreview from "@/components/LivePreview";
+import flexStatsBar from "@/components/StatsBar"; // dummy
 import StatsBar from "@/components/StatsBar";
+import Header from "@/components/Header";
 
 export const dynamic = "force-dynamic";
 
@@ -10,15 +12,7 @@ export default function LandingPage() {
   return (
     <div className="min-h-screen bg-[#0A0A0A] text-[#F5F5F5]">
       {/* Nav */}
-      <nav className="border-b border-white/[0.07] px-6 py-4 flex items-center justify-between max-w-6xl mx-auto">
-        <span className="font-semibold tracking-tight">Nexa</span>
-        <a
-          href="#waitlist"
-          className="text-sm bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded transition-colors"
-        >
-          Get early access
-        </a>
-      </nav>
+      <Header maxWidthClass="max-w-6xl w-full" />
 
       {/* Hero */}
       <section className="max-w-6xl mx-auto px-6 pt-24 pb-16 text-center">

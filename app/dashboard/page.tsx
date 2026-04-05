@@ -6,6 +6,7 @@ import { type User } from "@supabase/supabase-js";
 import FilterSidebar from "@/components/FilterSidebar";
 import OpportunityCard from "@/components/OpportunityCard";
 import OpportunityDrawer from "@/components/OpportunityDrawer";
+import Header from "@/components/Header";
 
 interface Opportunity {
   id: string;
@@ -97,18 +98,6 @@ export default function DashboardPage() {
   const [page, setPage] = useState(1);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const debounceRef = useRef<NodeJS.Timeout | null>(null);
-  const [user, setUser] = useState<User | null>(null);
-
-  useEffect(() => {
-    const supabase = createSupabaseBrowser();
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setUser(session?.user ?? null);
-    });
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user ?? null);
-    });
-    return () => subscription.unsubscribe();
-  }, []);
 
   const fetchData = useCallback(async (f: Filters, p: number) => {
     setLoading(true);
@@ -143,53 +132,13 @@ export default function DashboardPage() {
   return (
     <div className="min-h-screen bg-[#0A0A0A] flex flex-col">
       {/* Top nav */}
-      <nav className="border-b border-white/[0.07] px-6 py-4 flex items-center justify-between shrink-0">
-        <a href="/" className="font-semibold text-[#F5F5F5] tracking-tight">
-          Nexa
-        </a>
-        <div className="flex items-center gap-4">
-          <span className="text-xs text-[#A0A0A0]">
-            {data ? `${data.total.toLocaleString()} results` : "Loading..."}
-          </span>
-          <select
-            value={filters.sort}
-            onChange={(e) => setFilters((f) => ({ ...f, sort: e.target.value }))}
-            className="bg-[#1A1A1A] border border-white/[0.07] rounded text-xs text-[#A0A0A0] px-3 py-1.5 focus:outline-none"
-          >
-            <option value="newest">Newest first</option>
-            <option value="deadline">Deadline soonest</option>
-            <option value="value">Value (high to low)</option>
-          </select>
-          <a
-            href="/profile"
-            className="text-xs text-[#A0A0A0] hover:text-[#F5F5F5] border border-white/[0.07] px-3 py-1.5 rounded transition-colors"
-          >
-            Profile
-          </a>
-          {user ? (
-            <div className="flex items-center gap-4">
-              <span className="text-xs text-[#A0A0A0]">{user.email}</span>
-              <button
-                onClick={async () => {
-                  const supabase = createSupabaseBrowser();
-                  await supabase.auth.signOut();
-                  window.location.reload();
-                }}
-                className="text-xs text-[#A0A0A0] hover:text-[#F5F5F5] transition-colors"
-              >
-                Sign out
-              </button>
-            </div>
-          ) : (
-            <a
-              href="/auth/login"
-              className="text-xs text-blue-400 hover:text-blue-300 transition-colors"
-            >
-              Sign in
-            </a>
-          )}
-        </div>
-      </nav>
+      <Header
+        isDashboard={true}
+        dataCount={data?.total ?? undefined}
+        sortValue={filters.sort}
+        onSortChange={(val) => setFilters((f) => ({ ...f, sort: val }))}
+        maxWidthClass="w-full"
+      />
 
       <div className="flex flex-1 min-h-0">
         {/* Sidebar */}

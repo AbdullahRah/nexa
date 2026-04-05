@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { createSupabaseBrowser } from "@/lib/auth/supabase-browser";
 import Link from "next/link";
+import Header from "@/components/Header";
 
 const TRADE_OPTIONS = [
   { value: "", label: "Select trade" },
@@ -90,12 +91,6 @@ export default function ProfilePage() {
     setTimeout(() => setSaved(false), 3000);
   }
 
-  async function handleSignOut() {
-    const supabase = createSupabaseBrowser();
-    await supabase.auth.signOut();
-    window.location.href = "/";
-  }
-
   function toggleRegion(r: string) {
     setRegions((prev) =>
       prev.includes(r) ? prev.filter((x) => x !== r) : [...prev, r]
@@ -112,20 +107,7 @@ export default function ProfilePage() {
 
   return (
     <div className="min-h-screen bg-[#0A0A0A]">
-      <nav className="border-b border-white/[0.07] px-6 py-4 flex items-center justify-between max-w-3xl mx-auto">
-        <Link href="/dashboard" className="font-semibold text-[#F5F5F5] tracking-tight">
-          Nexa
-        </Link>
-        <div className="flex items-center gap-4">
-          <span className="text-xs text-[#A0A0A0]">{user?.email}</span>
-          <button
-            onClick={handleSignOut}
-            className="text-xs text-[#A0A0A0] hover:text-[#F5F5F5] transition-colors"
-          >
-            Sign out
-          </button>
-        </div>
-      </nav>
+      <Header maxWidthClass="max-w-3xl w-full" />
 
       <div className="max-w-3xl mx-auto px-6 py-10">
         <h1 className="text-xl font-semibold text-[#F5F5F5] mb-8">Profile & Preferences</h1>
