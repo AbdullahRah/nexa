@@ -1,10 +1,8 @@
 import Groq from "groq-sdk";
 import { prisma } from "@/lib/db/client";
 
-function getGroq() {
-  if (!process.env.GROQ_API_KEY) return null;
-  return new Groq({ apiKey: process.env.GROQ_API_KEY });
-}
+const OPENROUTER_MODEL = "qwen/qwen3.6-plus:free";
+const GROQ_MODEL = "llama-3.3-70b-versatile";
 
 const SYSTEM_PROMPT = `You are a UK construction procurement analyst. Given a tender notice, extract:
 
@@ -21,7 +19,16 @@ interface EnrichmentResult {
   summary: string;
 }
 
-async function enrichSingle(opp: {
+function buildUserPrompt(opp: OppInput): string {
+  return `Notice title: ${opp.title ?? "N/A"}
+Buyer: ${opp.buyer_name ?? "N/A"}
+Description: ${(opp.description_raw ?? "N/A").slice(0, 2000)}
+CPV: ${opp.cpv_primary ?? "N/A"}
+Deadline: ${opp.tender_deadline?.toISOString() ?? "N/A"}
+Value: ${opp.value_min ?? "N/A"}–${opp.value_max ?? "N/A"}`;
+}
+
+interface OppInput {
   id: string;
   title: string | null;
   buyer_name: string | null;
@@ -30,34 +37,78 @@ async function enrichSingle(opp: {
   tender_deadline: Date | null;
   value_min: unknown;
   value_max: unknown;
-}): Promise<EnrichmentResult | null> {
-  const userPrompt = `Notice title: ${opp.title ?? "N/A"}
-Buyer: ${opp.buyer_name ?? "N/A"}
-Description: ${(opp.description_raw ?? "N/A").slice(0, 2000)}
-CPV: ${opp.cpv_primary ?? "N/A"}
-Deadline: ${opp.tender_deadline?.toISOString() ?? "N/A"}
-Value: ${opp.value_min ?? "N/A"}–${opp.value_max ?? "N/A"}`;
+}
 
-  const groq = getGroq();
-  if (!groq) return null;
+// Primary: OpenRouter (Qwen)
+async function callOpenRouter(userPrompt: string): Promise<{ content: string; model: string } | null> {
+  const apiKey = process.env.OPENROUTER_API_KEY;
+  if (!apiKey) return null;
 
-  try {
-    const completion = await groq.chat.completions.create({
-      model: "llama-3.3-70b-versatile",
+  const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      model: OPENROUTER_MODEL,
       messages: [
         { role: "system", content: SYSTEM_PROMPT },
         { role: "user", content: userPrompt },
       ],
       temperature: 0.1,
       max_tokens: 500,
-      response_format: { type: "json_object" },
-    });
+    }),
+  });
 
-    const content = completion.choices[0]?.message?.content;
-    if (!content) return null;
+  if (!res.ok) {
+    console.error(`OpenRouter ${res.status}: ${await res.text()}`);
+    return null;
+  }
 
-    const parsed = JSON.parse(content) as EnrichmentResult;
-    return parsed;
+  const data = await res.json();
+  const content = data?.choices?.[0]?.message?.content;
+  if (!content) return null;
+  return { content, model: OPENROUTER_MODEL };
+}
+
+// Fallback: Groq (Llama)
+async function callGroq(userPrompt: string): Promise<{ content: string; model: string } | null> {
+  if (!process.env.GROQ_API_KEY) return null;
+  const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
+
+  const completion = await groq.chat.completions.create({
+    model: GROQ_MODEL,
+    messages: [
+      { role: "system", content: SYSTEM_PROMPT },
+      { role: "user", content: userPrompt },
+    ],
+    temperature: 0.1,
+    max_tokens: 500,
+    response_format: { type: "json_object" },
+  });
+
+  const content = completion.choices[0]?.message?.content;
+  if (!content) return null;
+  return { content, model: GROQ_MODEL };
+}
+
+async function enrichSingle(opp: OppInput): Promise<(EnrichmentResult & { model: string }) | null> {
+  const userPrompt = buildUserPrompt(opp);
+
+  try {
+    // Try OpenRouter first, fall back to Groq
+    let result = await callOpenRouter(userPrompt);
+    if (!result) {
+      console.log(`OpenRouter unavailable for ${opp.id}, falling back to Groq`);
+      result = await callGroq(userPrompt);
+    }
+    if (!result) return null;
+
+    // Strip markdown code fences if present
+    const cleaned = result.content.replace(/^```json?\n?/i, "").replace(/\n?```$/i, "").trim();
+    const parsed = JSON.parse(cleaned) as EnrichmentResult;
+    return { ...parsed, model: result.model };
   } catch (err) {
     console.error(`Enrichment failed for ${opp.id}:`, err);
     return null;
@@ -101,18 +152,17 @@ export async function enrichOpportunities(limit = 20): Promise<{
           trade_class: result.trade_classification,
           risk_flags: result.risk_flags,
           summary: result.summary,
-          model: "llama-3.3-70b-versatile",
+          model: result.model,
         },
         create: {
           opportunity_id: opp.id,
           trade_class: result.trade_classification,
           risk_flags: result.risk_flags,
           summary: result.summary,
-          model: "llama-3.3-70b-versatile",
+          model: result.model,
         },
       });
 
-      // Also update the opportunity's description_summary
       await prisma.opportunity.update({
         where: { id: opp.id },
         data: { description_summary: result.summary },
