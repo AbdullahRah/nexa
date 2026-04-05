@@ -22,6 +22,12 @@ interface Opportunity {
   published_at: string | null;
   notice_type: string | null;
   ocid: string;
+  description_summary: string | null;
+  ai_extractions: {
+    trade_class: string | null;
+    risk_flags: string[];
+    summary: string | null;
+  } | null;
 }
 
 interface ApiResponse {
@@ -140,6 +146,18 @@ export default function DashboardPage() {
             <option value="deadline">Deadline soonest</option>
             <option value="value">Value (high to low)</option>
           </select>
+          <a
+            href="/profile"
+            className="text-xs text-[#A0A0A0] hover:text-[#F5F5F5] border border-white/[0.07] px-3 py-1.5 rounded transition-colors"
+          >
+            Profile
+          </a>
+          <a
+            href="/auth/login"
+            className="text-xs text-blue-400 hover:text-blue-300 transition-colors"
+          >
+            Sign in
+          </a>
         </div>
       </nav>
 

@@ -133,6 +133,14 @@ export async function GET(request: NextRequest) {
         published_at: true,
         notice_type: true,
         ocid: true,
+        description_summary: true,
+        ai_extractions: {
+          select: {
+            trade_class: true,
+            risk_flags: true,
+            summary: true,
+          },
+        },
       },
     }),
   ]);

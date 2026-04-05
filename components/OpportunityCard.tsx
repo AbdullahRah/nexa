@@ -55,6 +55,12 @@ interface Opportunity {
   source_system: string;
   status: string;
   published_at: string | null;
+  description_summary: string | null;
+  ai_extractions: {
+    trade_class: string | null;
+    risk_flags: string[];
+    summary: string | null;
+  } | null;
 }
 
 interface Props {
@@ -137,10 +143,36 @@ export default function OpportunityCard({ opportunity: o, onClick }: Props) {
         )}
       </div>
 
+      {/* AI Summary */}
+      {o.ai_extractions?.summary && (
+        <p className="text-[11px] text-[#A0A0A0]/70 mt-3 line-clamp-2 leading-relaxed italic">
+          {o.ai_extractions.summary}
+        </p>
+      )}
+
+      {/* Risk flags */}
+      {o.ai_extractions?.risk_flags && o.ai_extractions.risk_flags.length > 0 && (
+        <div className="flex flex-wrap gap-1 mt-2">
+          {o.ai_extractions.risk_flags.map((flag) => (
+            <span
+              key={flag}
+              className="text-[9px] font-mono text-amber-400/80 bg-amber-400/5 border border-amber-400/10 px-1.5 py-0.5 rounded"
+            >
+              {flag.replace(/_/g, " ")}
+            </span>
+          ))}
+        </div>
+      )}
+
       <div className="flex items-center gap-2 mt-4 pt-4 border-t border-white/[0.05]">
         <span className="text-[10px] font-mono text-[#A0A0A0] border border-white/[0.07] px-1.5 py-0.5 rounded">
           {sourceLabel}
         </span>
+        {o.ai_extractions?.trade_class && (
+          <span className="text-[10px] font-mono text-blue-400/60 border border-blue-400/10 px-1.5 py-0.5 rounded">
+            {o.ai_extractions.trade_class.replace(/_/g, " ")}
+          </span>
+        )}
         {o.cpv_primary && (
           <span className="text-[10px] font-mono text-[#A0A0A0]">{o.cpv_primary}</span>
         )}

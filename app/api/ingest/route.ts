@@ -1,8 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { runContractsFinderSync } from "@/lib/ingestion/contracts-finder";
+import { runFindATenderSync } from "@/lib/ingestion/find-a-tender";
+import { enrichOpportunities } from "@/lib/ai/enrichment";
+
+export const maxDuration = 60;
 
 export async function GET(request: NextRequest) {
-  // Protect with cron secret
   const authHeader = request.headers.get("authorization");
   const cronSecret = process.env.CRON_SECRET;
 
@@ -10,13 +13,28 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  const results: Record<string, unknown> = {};
+
   try {
-    const result = await runContractsFinderSync();
-    return NextResponse.json({ ok: true, ...result });
+    results.contracts_finder = await runContractsFinderSync();
   } catch (err) {
-    console.error("Ingest failed:", err);
-    return NextResponse.json({ ok: false, error: String(err) }, { status: 500 });
+    results.contracts_finder = { error: String(err) };
   }
+
+  try {
+    results.find_a_tender = await runFindATenderSync();
+  } catch (err) {
+    results.find_a_tender = { error: String(err) };
+  }
+
+  // Enrich a batch of unenriched opportunities
+  try {
+    results.enrichment = await enrichOpportunities(10);
+  } catch (err) {
+    results.enrichment = { error: String(err) };
+  }
+
+  return NextResponse.json({ ok: true, results });
 }
 
 export async function POST(request: NextRequest) {
