@@ -1,0 +1,95 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+model Source {
+  id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name        String
+  base_url    String
+  auth_type   String
+  last_synced DateTime? @db.Timestamptz
+  is_active   Boolean   @default(true)
+
+  @@map("sources")
+}
+
+model Opportunity {
+  id                  String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  source_system       String
+  source_notice_id    String?
+  ocid                String    @unique
+  notice_type         String?
+  title               String?
+  description_raw     String?
+  description_summary String?
+  buyer_name          String?
+  buyer_identifier    String?
+  buyer_type          String?
+  published_at        DateTime? @db.Timestamptz
+  updated_at          DateTime? @db.Timestamptz
+  tender_deadline     DateTime? @db.Timestamptz
+  contract_start      DateTime? @db.Date
+  contract_end        DateTime? @db.Date
+  value_min           Decimal?  @db.Decimal
+  value_max           Decimal?  @db.Decimal
+  currency            String    @default("GBP")
+  framework_flag      Boolean   @default(false)
+  lots_flag           Boolean   @default(false)
+  lot_count           Int?
+  location_text       String?
+  region_code         String?
+  postcode            String?
+  cpv_primary         String?
+  cpv_additional      String[]
+  keywords            String[]
+  documents           Json?
+  status              String    @default("live")
+  source_url          String?
+  raw_payload         Json?
+  created_at          DateTime  @default(now()) @db.Timestamptz
+
+  @@index([cpv_primary])
+  @@index([status])
+  @@index([tender_deadline])
+  @@index([source_system])
+  @@map("opportunities")
+}
+
+model Buyer {
+  id         String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  identifier String  @unique
+  name       String?
+  type       String?
+  region     String?
+
+  @@map("buyers")
+}
+
+model SyncLog {
+  id              String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  source_system   String
+  started_at      DateTime  @db.Timestamptz
+  completed_at    DateTime? @db.Timestamptz
+  notices_fetched Int?
+  notices_new     Int?
+  notices_updated Int?
+  error           String?
+
+  @@map("sync_logs")
+}
+
+model Waitlist {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  email      String   @unique
+  trade      String?
+  company    String?
+  created_at DateTime @default(now()) @db.Timestamptz
+
+  @@map("waitlist")
+}
