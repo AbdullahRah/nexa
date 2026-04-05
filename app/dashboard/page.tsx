@@ -1,8 +1,6 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
-import { createSupabaseBrowser } from "@/lib/auth/supabase-browser";
-import { type User } from "@supabase/supabase-js";
 import FilterSidebar from "@/components/FilterSidebar";
 import OpportunityCard from "@/components/OpportunityCard";
 import OpportunityDrawer from "@/components/OpportunityDrawer";

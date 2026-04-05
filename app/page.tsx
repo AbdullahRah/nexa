@@ -2,7 +2,6 @@ import { Suspense } from "react";
 import Link from "next/link";
 import WaitlistForm from "@/components/WaitlistForm";
 import LivePreview from "@/components/LivePreview";
-import flexStatsBar from "@/components/StatsBar"; // dummy
 import StatsBar from "@/components/StatsBar";
 import Header from "@/components/Header";
 

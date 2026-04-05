@@ -2,7 +2,6 @@
 
 import { useState, useEffect } from "react";
 import { createSupabaseBrowser } from "@/lib/auth/supabase-browser";
-import Link from "next/link";
 import Header from "@/components/Header";
 
 const TRADE_OPTIONS = [
@@ -27,7 +26,6 @@ const REGION_OPTIONS = [
 export default function ProfilePage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [user, setUser] = useState<{ email: string } | null>(null);
   const [trade, setTrade] = useState("");
   const [company, setCompany] = useState("");
   const [regions, setRegions] = useState<string[]>([]);
@@ -46,8 +44,6 @@ export default function ProfilePage() {
         window.location.href = "/auth/login";
         return;
       }
-
-      setUser({ email: user.email! });
 
       const res = await fetch("/api/profile");
       const data = await res.json();
