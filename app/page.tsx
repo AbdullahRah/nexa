@@ -4,6 +4,8 @@ import WaitlistForm from "@/components/WaitlistForm";
 import LivePreview from "@/components/LivePreview";
 import StatsBar from "@/components/StatsBar";
 
+export const dynamic = "force-dynamic";
+
 export default function LandingPage() {
   return (
     <div className="min-h-screen bg-[#0A0A0A] text-[#F5F5F5]">

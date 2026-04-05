@@ -94,7 +94,7 @@ export async function runContractsFinderSync(): Promise<{
   ).id;
 
   try {
-    // Incremental: only fetch notices from last 7 days (or last sync)
+    // Incremental: only fetch notices from last sync (or last 30 days for first run)
     const source = await prisma.source.findFirst({
       where: { name: "contracts_finder" },
     });
@@ -102,7 +102,7 @@ export async function runContractsFinderSync(): Promise<{
     const lastSynced = source?.last_synced;
     const publishedFrom = lastSynced
       ? lastSynced.toISOString().split("T")[0]
-      : new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split("T")[0];
+      : new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split("T")[0];
 
     for (const cpv of CONSTRUCTION_CPV_CODES) {
       let page = 1;
