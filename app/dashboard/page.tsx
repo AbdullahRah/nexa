@@ -1,6 +1,8 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
+import { createSupabaseBrowser } from "@/lib/auth/supabase-browser";
+import { type User } from "@supabase/supabase-js";
 import FilterSidebar from "@/components/FilterSidebar";
 import OpportunityCard from "@/components/OpportunityCard";
 import OpportunityDrawer from "@/components/OpportunityDrawer";
@@ -95,6 +97,18 @@ export default function DashboardPage() {
   const [page, setPage] = useState(1);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const debounceRef = useRef<NodeJS.Timeout | null>(null);
+  const [user, setUser] = useState<User | null>(null);
+
+  useEffect(() => {
+    const supabase = createSupabaseBrowser();
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setUser(session?.user ?? null);
+    });
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user ?? null);
+    });
+    return () => subscription.unsubscribe();
+  }, []);
 
   const fetchData = useCallback(async (f: Filters, p: number) => {
     setLoading(true);
@@ -152,12 +166,28 @@ export default function DashboardPage() {
           >
             Profile
           </a>
-          <a
-            href="/auth/login"
-            className="text-xs text-blue-400 hover:text-blue-300 transition-colors"
-          >
-            Sign in
-          </a>
+          {user ? (
+            <div className="flex items-center gap-4">
+              <span className="text-xs text-[#A0A0A0]">{user.email}</span>
+              <button
+                onClick={async () => {
+                  const supabase = createSupabaseBrowser();
+                  await supabase.auth.signOut();
+                  window.location.reload();
+                }}
+                className="text-xs text-[#A0A0A0] hover:text-[#F5F5F5] transition-colors"
+              >
+                Sign out
+              </button>
+            </div>
+          ) : (
+            <a
+              href="/auth/login"
+              className="text-xs text-blue-400 hover:text-blue-300 transition-colors"
+            >
+              Sign in
+            </a>
+          )}
         </div>
       </nav>
 

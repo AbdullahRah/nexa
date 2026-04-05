@@ -73,13 +73,41 @@ function fmtValue(min: number | null, max: number | null): string {
 export default function OpportunityDrawer({ opportunityId, onClose }: Props) {
   const [opportunity, setOpportunity] = useState<FullOpportunity | null>(null);
   const [loading, setLoading] = useState(false);
+  const [generatingProposal, setGeneratingProposal] = useState(false);
+  const [proposal, setProposal] = useState<string | null>(null);
+
+  async function handleGenerateProposal() {
+    if (!opportunity?.id) return;
+    setGeneratingProposal(true);
+    setProposal(null);
+    try {
+      const res = await fetch("/api/propose", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ opportunityId: opportunity.id }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setProposal(data.proposal);
+      } else {
+        alert("Error generating proposal");
+      }
+    } catch (err) {
+      console.error(err);
+      alert("Error generating proposal");
+    } finally {
+      setGeneratingProposal(false);
+    }
+  }
 
   useEffect(() => {
     if (!opportunityId) {
       setOpportunity(null);
+      setProposal(null);
       return;
     }
     setLoading(true);
+    setProposal(null);
     fetch(`/api/opportunities/${opportunityId}`)
       .then((r) => r.json())
       .then((data) => {
@@ -207,6 +235,27 @@ export default function OpportunityDrawer({ opportunityId, onClose }: Props) {
                   <p className="text-sm text-[#A0A0A0] leading-relaxed whitespace-pre-wrap">
                     {opportunity.description_raw}
                   </p>
+                </Section>
+              )}
+
+              {/* AI Proposal Generation */}
+              <div className="pt-4 border-t border-white/[0.07]">
+                <button
+                  onClick={handleGenerateProposal}
+                  disabled={generatingProposal}
+                  className="w-full bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-sm font-medium py-3 rounded transition-colors flex items-center justify-center gap-2"
+                >
+                  {generatingProposal ? "Generating with Qwen AI..." : "✨ Generate Bid Proposal (AI)"}
+                </button>
+              </div>
+
+              {proposal && (
+                <Section label="AI Generated Proposal">
+                  <div className="bg-[#1A1A1A] border border-blue-500/20 rounded p-4">
+                    <p className="text-sm text-[#F5F5F5] leading-relaxed whitespace-pre-wrap">
+                      {proposal}
+                    </p>
+                  </div>
                 </Section>
               )}
 
