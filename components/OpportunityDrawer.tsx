@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { format } from "date-fns";
+import GoNoGoModal from "@/components/GoNoGoModal";
 
 const CPV_LABELS: Record<string, string> = {
   "45000000": "Construction Work",
@@ -76,6 +77,32 @@ export default function OpportunityDrawer({ opportunityId, onClose }: Props) {
   const [generatingProposal, setGeneratingProposal] = useState(false);
   const [proposal, setProposal] = useState<string | null>(null);
 
+  // Go/No-Go state
+  const [goNoGoLoading, setGoNoGoLoading] = useState(false);
+  const [goNoGoAnalysis, setGoNoGoAnalysis] = useState<{
+    recommendation: string;
+    confidence: string;
+    reasoning: string;
+    time_to_submit: string;
+    mandatory_requirements: { requirement: string; critical: boolean }[];
+    deadlines: { date: string; description: string }[];
+    financial_thresholds: { description: string; value: string }[];
+    experience_requirements: string[];
+    geographical_constraints: string[];
+    red_flags: string[];
+  } | null>(null);
+  const [goNoGoModalOpen, setGoNoGoModalOpen] = useState(false);
+
+  // Compliance state
+  const [complianceLoading, setComplianceLoading] = useState(false);
+  const [complianceResult, setComplianceResult] = useState<{
+    overall_compliance: string;
+    compliance_score?: number;
+    requirements_checked?: { requirement: string; status: string; evidence?: string; suggestion?: string }[];
+    missing_sections?: string[];
+    warnings?: string[];
+  } | null>(null);
+
   async function handleGenerateProposal() {
     if (!opportunity?.id) return;
     setGeneratingProposal(true);
@@ -100,14 +127,86 @@ export default function OpportunityDrawer({ opportunityId, onClose }: Props) {
     }
   }
 
+  async function handleGoNoGo() {
+    if (!opportunity?.id) return;
+    setGoNoGoLoading(true);
+    setGoNoGoAnalysis(null);
+    setGoNoGoModalOpen(true);
+    try {
+      const res = await fetch("/api/go-no-go", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ opportunityId: opportunity.id }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setGoNoGoAnalysis(data.analysis);
+      } else {
+        alert("Error running Go/No-Go analysis");
+        setGoNoGoModalOpen(false);
+      }
+    } catch (err) {
+      console.error(err);
+      alert("Error running Go/No-Go analysis");
+      setGoNoGoModalOpen(false);
+    } finally {
+      setGoNoGoLoading(false);
+    }
+  }
+
+  async function handleComplianceCheck() {
+    if (!opportunity?.id || !proposal) return;
+    setComplianceLoading(true);
+    setComplianceResult(null);
+    try {
+      const res = await fetch("/api/compliance-check", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ opportunityId: opportunity.id, proposalText: proposal }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setComplianceResult(data);
+      } else {
+        alert("Error checking compliance");
+      }
+    } catch (err) {
+      console.error(err);
+      alert("Error checking compliance");
+    } finally {
+      setComplianceLoading(false);
+    }
+  }
+
+  async function handleSaveAndEdit() {
+    if (!opportunity?.id || !proposal) return;
+    // Save draft first
+    try {
+      await fetch("/api/proposals", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ opportunityId: opportunity.id, content: proposal }),
+      });
+      // Navigate to editor
+      window.location.href = `/proposal/${opportunity.id}`;
+    } catch (err) {
+      console.error(err);
+      alert("Error saving draft");
+    }
+  }
+
   useEffect(() => {
     if (!opportunityId) {
       setOpportunity(null);
       setProposal(null);
+      setGoNoGoAnalysis(null);
+      setComplianceResult(null);
       return;
     }
     setLoading(true);
     setProposal(null);
+    setGoNoGoAnalysis(null);
+    setComplianceResult(null);
     fetch(`/api/opportunities/${opportunityId}`)
       .then((r) => r.json())
       .then((data) => {
@@ -238,25 +337,137 @@ export default function OpportunityDrawer({ opportunityId, onClose }: Props) {
                 </Section>
               )}
 
-              {/* AI Proposal Generation */}
-              <div className="pt-4 border-t border-white/[0.07]">
+              {/* Action Buttons */}
+              <div className="pt-4 border-t border-white/[0.07] space-y-3">
+                {/* Go/No-Go Button */}
+                <button
+                  onClick={handleGoNoGo}
+                  disabled={goNoGoLoading}
+                  className="w-full bg-amber-600 hover:bg-amber-700 disabled:opacity-50 text-white text-sm font-medium py-3 rounded transition-colors flex items-center justify-center gap-2"
+                >
+                  {goNoGoLoading ? "Analyzing requirements..." : "Go / No-Go Analysis"}
+                </button>
+
+                {/* Generate Proposal Button */}
                 <button
                   onClick={handleGenerateProposal}
                   disabled={generatingProposal}
                   className="w-full bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-sm font-medium py-3 rounded transition-colors flex items-center justify-center gap-2"
                 >
-                  {generatingProposal ? "Generating with Qwen AI..." : "✨ Generate Bid Proposal (AI)"}
+                  {generatingProposal ? "Generating with Qwen AI..." : "Generate Bid Proposal (AI)"}
                 </button>
               </div>
 
+              {/* Proposal Output */}
               {proposal && (
-                <Section label="AI Generated Proposal">
-                  <div className="bg-[#1A1A1A] border border-blue-500/20 rounded p-4">
-                    <p className="text-sm text-[#F5F5F5] leading-relaxed whitespace-pre-wrap">
-                      {proposal}
-                    </p>
+                <div className="space-y-3">
+                  <Section label="AI Generated Proposal">
+                    <div className="bg-[#1A1A1A] border border-blue-500/20 rounded p-4">
+                      <p className="text-sm text-[#F5F5F5] leading-relaxed whitespace-pre-wrap">
+                        {proposal}
+                      </p>
+                    </div>
+                  </Section>
+
+                  {/* Post-proposal actions */}
+                  <div className="flex gap-2">
+                    <button
+                      onClick={handleSaveAndEdit}
+                      className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium py-2.5 rounded transition-colors"
+                    >
+                      Open in Editor
+                    </button>
+                    <button
+                      onClick={handleComplianceCheck}
+                      disabled={complianceLoading}
+                      className="flex-1 bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white text-sm font-medium py-2.5 rounded transition-colors"
+                    >
+                      {complianceLoading ? "Checking..." : "Audit Compliance"}
+                    </button>
                   </div>
-                </Section>
+
+                  {/* Compliance Results Inline */}
+                  {complianceResult && (
+                    <Section label="Compliance Audit">
+                      <div className="bg-[#1A1A1A] border border-white/[0.07] rounded p-4 space-y-3">
+                        <div className="flex items-center gap-3">
+                          <span
+                            className={`text-xs font-bold px-3 py-1 rounded ${
+                              complianceResult.overall_compliance === "COMPLIANT"
+                                ? "bg-green-500/20 text-green-400"
+                                : complianceResult.overall_compliance === "PARTIALLY_COMPLIANT"
+                                ? "bg-amber-500/20 text-amber-400"
+                                : "bg-red-500/20 text-red-400"
+                            }`}
+                          >
+                            {complianceResult.overall_compliance}
+                          </span>
+                          {complianceResult.compliance_score !== undefined && (
+                            <span className="text-sm text-[#A0A0A0]">
+                              Score: {complianceResult.compliance_score}%
+                            </span>
+                          )}
+                        </div>
+
+                        {(complianceResult.requirements_checked ?? []).length > 0 && (
+                          <div className="space-y-2">
+                            {(complianceResult.requirements_checked ?? []).map(
+                              (req, i) => (
+                                <div
+                                  key={i}
+                                  className="flex items-start gap-2 text-xs"
+                                >
+                                  <span
+                                    className={`mt-0.5 shrink-0 ${
+                                      req.status === "MET"
+                                        ? "text-green-400"
+                                        : req.status === "PARTIALLY_MET"
+                                        ? "text-amber-400"
+                                        : req.status === "NOT_MET"
+                                        ? "text-red-400"
+                                        : "text-[#A0A0A0]"
+                                    }`}
+                                  >
+                                    {req.status === "MET"
+                                      ? "✓"
+                                      : req.status === "NOT_MET"
+                                      ? "✕"
+                                      : "~"}
+                                  </span>
+                                  <div>
+                                    <span className="text-[#F5F5F5]">
+                                      {req.requirement}
+                                    </span>
+                                    {req.suggestion && (
+                                      <p className="text-[#A0A0A0] mt-0.5">
+                                        Fix: {req.suggestion}
+                                      </p>
+                                    )}
+                                  </div>
+                                </div>
+                              )
+                            )}
+                          </div>
+                        )}
+
+                        {(complianceResult.missing_sections ?? []).length > 0 && (
+                          <div>
+                            <p className="text-xs text-amber-400 font-medium mb-1">
+                              Missing Sections:
+                            </p>
+                            <ul className="text-xs text-[#A0A0A0] list-disc list-inside">
+                              {(complianceResult.missing_sections ?? []).map(
+                                (s: string, i: number) => (
+                                  <li key={i}>{s}</li>
+                                )
+                              )}
+                            </ul>
+                          </div>
+                        )}
+                      </div>
+                    </Section>
+                  )}
+                </div>
               )}
 
               {/* Documents */}
@@ -306,6 +517,15 @@ export default function OpportunityDrawer({ opportunityId, onClose }: Props) {
           )}
         </div>
       </div>
+
+      {/* Go/No-Go Modal */}
+      <GoNoGoModal
+        isOpen={goNoGoModalOpen}
+        onClose={() => setGoNoGoModalOpen(false)}
+        analysis={goNoGoAnalysis}
+        loading={goNoGoLoading}
+        opportunityTitle={opportunity?.title ?? undefined}
+      />
     </>
   );
 }

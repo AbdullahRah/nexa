@@ -60,12 +60,20 @@ export default function Header({
           )}
 
           {user && (
-            <Link
-              href="/profile"
-              className="text-xs text-[#A0A0A0] hover:text-[#F5F5F5] border border-white/[0.07] px-3 py-1.5 rounded transition-colors"
-            >
-              Profile
-            </Link>
+            <>
+              <Link
+                href="/knowledge"
+                className="text-xs text-[#A0A0A0] hover:text-[#F5F5F5] border border-white/[0.07] px-3 py-1.5 rounded transition-colors"
+              >
+                Knowledge Base
+              </Link>
+              <Link
+                href="/profile"
+                className="text-xs text-[#A0A0A0] hover:text-[#F5F5F5] border border-white/[0.07] px-3 py-1.5 rounded transition-colors"
+              >
+                Profile
+              </Link>
+            </>
           )}
 
           {user ? (

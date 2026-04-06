@@ -153,3 +153,82 @@ model MatchScore {
   @@index([overall_score])
   @@map("match_scores")
 }
+
+model KnowledgeDocument {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  user_id    String
+  file_name  String
+  file_type  String   // "proposal", "cv", "case_study", "cert", "company_profile", "other"
+  file_url   String
+  file_size  Int
+  status     String   @default("processing") // "processing", "ready", "error"
+  created_at DateTime @default(now()) @db.Timestamptz
+  updated_at DateTime @default(now()) @db.Timestamptz
+
+  chunks KnowledgeChunk[]
+
+  @@index([user_id])
+  @@index([file_type])
+  @@map("knowledge_documents")
+}
+
+model KnowledgeChunk {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  document_id String   @db.Uuid
+  user_id     String
+  content     String
+  metadata    Json?
+  created_at  DateTime @default(now()) @db.Timestamptz
+
+  document KnowledgeDocument @relation(fields: [document_id], references: [id], onDelete: Cascade)
+
+  @@index([user_id])
+  @@index([document_id])
+  @@map("knowledge_chunks")
+}
+
+model GoNoGoAnalysis {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  opportunity_id String   @db.Uuid
+  user_id        String
+  recommendation String   // "GO", "NO-GO", "CONDITIONAL"
+  confidence     String   // "HIGH", "MEDIUM", "LOW"
+  analysis       Json
+  created_at     DateTime @default(now()) @db.Timestamptz
+
+  @@unique([opportunity_id, user_id])
+  @@map("go_no_go_analyses")
+}
+
+model ProposalDraft {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  user_id        String
+  opportunity_id String   @db.Uuid
+  content        String
+  version        Int      @default(1)
+  is_latest      Boolean  @default(true)
+  created_at     DateTime @default(now()) @db.Timestamptz
+  updated_at     DateTime @default(now()) @db.Timestamptz
+
+  collaborators ProposalCollaborator[]
+
+  @@index([user_id, opportunity_id])
+  @@index([is_latest])
+  @@map("proposal_drafts")
+}
+
+model ProposalCollaborator {
+  id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  proposal_id   String   @db.Uuid
+  user_id       String
+  role          String   @default("editor") // "owner", "editor", "viewer"
+  invited_email String?
+  accepted      Boolean  @default(false)
+  created_at    DateTime @default(now()) @db.Timestamptz
+
+  proposal ProposalDraft @relation(fields: [proposal_id], references: [id], onDelete: Cascade)
+
+  @@unique([proposal_id, user_id])
+  @@index([user_id])
+  @@map("proposal_collaborators")
+}

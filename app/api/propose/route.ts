@@ -1,8 +1,10 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db/client";
+import { createSupabaseServer } from "@/lib/auth/supabase-server";
+import { retrieveRelevantChunks } from "@/lib/knowledge/retriever";
 
 // Utilizing Qwen via OpenRouter for the proposal generation
-const OPENROUTER_MODEL = "qwen/qwen-2.5-72b-instruct"; 
+const OPENROUTER_MODEL = "qwen/qwen-2.5-72b-instruct";
 
 export async function POST(req: Request) {
   try {
@@ -18,8 +20,24 @@ export async function POST(req: Request) {
 
     if (!opp) return new NextResponse("Opportunity not found", { status: 404 });
 
-    const prompt = `You are a highly skilled UK bid writer and procurement expert. Please write a highly persuasive, professional proposal draft for the following opportunity. The proposal should emphasize our expertise, highlight how we meet the buyer's needs, and provide a strong hook. Keep it concise, structured, and under 500 words. It should be formatted in Markdown.
+    // Try to get user for RAG context
+    let knowledgeContext = "";
+    try {
+      const supabase = createSupabaseServer();
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        const queryText = `${opp.title ?? ""} ${opp.description_raw ?? ""} ${opp.buyer_name ?? ""}`.slice(0, 500);
+        const chunks = await retrieveRelevantChunks(user.id, queryText, 5);
+        if (chunks.length > 0) {
+          knowledgeContext = `\n\nCompany Knowledge (use these real details from our company documents to make the proposal specific and credible — reference actual projects, certifications, and experience mentioned below):\n---\n${chunks.join("\n---\n")}\n---\n`;
+        }
+      }
+    } catch {
+      // RAG is optional — continue without it
+    }
 
+    const prompt = `You are a highly skilled UK bid writer and procurement expert. Please write a highly persuasive, professional proposal draft for the following opportunity. The proposal should emphasize our expertise, highlight how we meet the buyer's needs, and provide a strong hook. Keep it concise, structured, and under 500 words. It should be formatted in Markdown.
+${knowledgeContext}
 Opportunity Details:
 Title: ${opp.title ?? "N/A"}
 Buyer: ${opp.buyer_name ?? "N/A"}
